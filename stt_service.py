@@ -52,7 +52,7 @@ def transcribe_wav(file_path: str) -> str:
     return transcription.strip()
 
 
-# '유연한' 유사도 채점
+# 유사도 채점
 def _normalize(text: str) -> str:
     """한글 NFC, 소문자, 특수문자 제거, 공백 정리"""
     t = unicodedata.normalize("NFC", (text or "").strip()).lower()
@@ -60,7 +60,7 @@ def _normalize(text: str) -> str:
     t = re.sub(r"\s+", " ", t)
     return t.strip()
 
-# 흔한 조사/정중어미 (필요에 따라 추가/조정)
+# 흔한 조사/정중어미
 _PARTICLES = r"(은|는|이|가|을|를|에|에서|으로|와|과|에게|께|한테|도|만|까지|부터|조차|라도|마저)"
 _POLITE_ENDINGS = r"(입니다|습니까|습니다|어요|에요|예요|였어요|였습니까|다)$"
 
@@ -97,7 +97,6 @@ def _jaccard_ngram(a: str, b: str, n: int = 2) -> float:
     if not A or not B:  return 0.0
     return len(A & B) / len(A | B)
 
-# --- 여기에 추가: 한글 자모 분해 유틸 --------------------------------
 CHO = [chr(c) for c in range(0x1100, 0x1113)]       # 19
 JUNG = [chr(c) for c in range(0x1161, 0x1176)]      # 21
 JONG = [""] + [chr(c) for c in range(0x11A8, 0x11C3)]  # 28 (빈 종성 포함)
@@ -125,7 +124,6 @@ def _jamo_sim(a: str, b: str) -> float:
     ja = _to_jamo(a.replace(" ", ""))
     jb = _to_jamo(b.replace(" ", ""))
     return SequenceMatcher(None, ja, jb).ratio()
-# -----------------------------------------------------------------------
 
 def _word_coverage(ref: str, hyp: str) -> float:
     """참고문장(ref) 대비 인식문장(hyp)의 '단어 일치 커버리지'(순서 감안)"""
