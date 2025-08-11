@@ -127,43 +127,69 @@ def _jamo_sim(a: str, b: str) -> float:
     return SequenceMatcher(None, ja, jb).ratio()
 # -----------------------------------------------------------------------
 
+def _word_coverage(ref: str, hyp: str) -> float:
+    """참고문장(ref) 대비 인식문장(hyp)의 '단어 일치 커버리지'(순서 감안)"""
+    r, h = ref.split(), hyp.split()
+    if not r:
+        return 0.0
+    sm = SequenceMatcher(None, r, h)
+    matched = sum(b.size for b in sm.get_matching_blocks())
+    return matched / len(r)
+
+def _char_coverage(ref: str, hyp: str) -> float:
+    """공백 무시한 '문자 LCS 커버리지' (띄어쓰기 영향 0)"""
+    r, h = list(ref.replace(" ", "")), list(hyp.replace(" ", ""))
+    if not r:
+        return 0.0
+    sm = SequenceMatcher(None, r, h)
+    matched = sum(b.size for b in sm.get_matching_blocks())
+    return matched / len(r)
+
 def calc_similarity(stt_text: str, ref_text: str) -> int:
     """
-    관대한 채점(발음유사 보정):
-    - 조사/정중어미 제거
-    - 문자/단어/bi-gram/자모 혼합 가중치
-    - 단어 일치율 soft floor
-    - 감마 스케일(0.85)
+    띄어쓰기 감점 제거 버전:
+    - 모든 지표에서 공백 영향 제거
+    - 문자/bi-gram/자모 혼합(단어 유사도는 제외)
+    - 공백 무시 LCS 커버리지로 soft floor
+    - 감마 스케일
     """
+    if not stt_text or not ref_text:
+        return 0
+
+    # 전처리 (조사/정중어미 제거)
     stt = _soft_korean_simplify(stt_text)
     ref = _soft_korean_simplify(ref_text)
 
-    # 개별 지표
-    c = _char_sim(stt, ref)            # 문자
-    w = _word_sim(stt, ref)            # 단어(순서 고려)
-    j2 = _jaccard_ngram(stt, ref, 2)   # bi-gram
-    js = _jamo_sim(stt, ref)           # 자모
+    # 공백 제거본
+    stt_ns = stt.replace(" ", "")
+    ref_ns = ref.replace(" ", "")
 
-    # 가중 평균 (단어/자모 비중 ↑)
-    score = 0.20 * c + 0.40 * w + 0.15 * j2 + 0.25 * js
+    # 지표 (모두 공백 영향 없음)
+    c  = _char_sim(stt, ref)            # 내부에서 공백 제거
+    j2 = _jaccard_ngram(stt, ref, 2)    # 내부에서 공백 제거
+    js = _jamo_sim(stt, ref)            # 내부에서 공백 제거
 
-    # 문두/문미 보너스(최대 +0.04)
-    sw, rw = stt.split(), ref.split()
-    if sw and rw:
-        if sw[0] == rw[0]: score += 0.02
-        if sw[-1] == rw[-1]: score += 0.02
+    # 가중 평균 (자모 비중↑: 발음 유사에 관대)
+    score = 0.30 * c + 0.20 * j2 + 0.50 * js
 
-    # 단어 일치율 기반 하한선(soft floor)
-    # ex) '네 처음 었습니다' vs '네 처음 왔습니다' → 2/3 단어 일치 ⇒ 최저 0.70 보장
-    if sw and rw:
-        common = sum(1 for a, b in zip(sw, rw) if a == b)
-        word_align_ratio = common / max(len(rw), 1)
-        if word_align_ratio >= 2/3:
-            score = max(score, 0.70)
+    # 문두/문미 보너스도 공백 무시 기준으로
+    if ref_ns and stt_ns:
+        if stt_ns[0] == ref_ns[0]:
+            score += 0.02
+        if stt_ns[-1] == ref_ns[-1]:
+            score += 0.02
+
+    # 공백 무시 LCS 커버리지 기반 최저점 보장 (띄어쓰기와 무관)
+    cov = _char_coverage(ref, stt)   # ref 대비 매칭 비율
+    if cov >= 2/3:
+        score = max(score, 0.75)
+    elif cov >= 0.5:
+        score = max(score, 0.65)
 
     score = min(1.0, score)
 
-    # 감마 스케일로 완만 상향
-    score = score ** 0.85
+    # 감마(γ)로 완만 상향 — 필요시 0.8~0.7로 내려 더 올릴 수 있음
+    GAMMA = 0.80
+    score = score ** GAMMA
 
     return int(round(score * 100))
