@@ -189,7 +189,7 @@ def calc_similarity(stt_text: str, ref_text: str) -> int:
     score = min(1.0, score)
 
     # 감마(γ)로 완만 상향 — 필요시 0.8~0.7로 내려 더 올릴 수 있음
-    GAMMA = 0.80
+    GAMMA = 0.6
     score = score ** GAMMA
 
     return int(round(score * 100))
